@@ -1,0 +1,8 @@
+# Example podcast feeds for ~/.config/newsboat/urls
+# Format: URL "~Display name" "Tag"
+
+https://feeds.megaphone.fm/EXAMPLE1234567890 "~Some podcast" "Podcasts"
+https://example.podigee.io/feed/mp3          "~Another one"  "Podcasts"
+
+# A feed that mixes several speakers can be filtered into its own entry:
+"query:Only Jane Doe:title =~ \"Jane Doe\"" "Podcasts"

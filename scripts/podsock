@@ -1,0 +1,27 @@
+#!/bin/sh
+# Prints the IPC socket of the running podcast playback, or fails.
+# Gibt den Steuer-Anschluss der laufenden Podcast-Wiedergabe aus.
+#
+# Two possible locations:
+#   1. our own socket (--input-ipc-server), the normal case
+#   2. /tmp/mpvSockets/<pid> — set by the mpvSockets.lua script that ships with
+#      LARBS and some other setups. It OVERRIDES --input-ipc-server *after* mpv
+#      has already created our socket file, so the file at our path stays
+#      behind with nobody listening on it. Testing for a socket file is
+#      therefore not enough — we ask whether anyone answers.
+
+. "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
+
+answers() {
+	[ -S "$1" ] || return 1
+	printf '%s\n' '{"command":["get_property","pause"]}' |
+		timeout 1 socat - "$1" >/dev/null 2>&1
+}
+
+pid="$(cat "$POD_PIDF" 2>/dev/null)"
+case "$pid" in ''|*[!0-9]*) exit 1 ;; esac
+pod_is_ours "$pid" || exit 1
+
+answers "$POD_SOCK"            && { echo "$POD_SOCK"; exit 0; }
+answers "/tmp/mpvSockets/$pid" && { echo "/tmp/mpvSockets/$pid"; exit 0; }
+exit 1

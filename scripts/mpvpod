@@ -1,0 +1,72 @@
+#!/bin/sh
+# Single-instance podcast player. A new call replaces the running playback.
+# Used by podplay and, if you like, as gPodder's media player.
+#
+#   mpvpod <file-or-url>
+#   mpvpod --stop
+#
+# Einzel-Abspieler: Es läuft immer nur EINE Wiedergabe, ein neuer Aufruf löst
+# die vorherige ab.
+
+. "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
+
+stop_running() {
+	[ -f "$POD_PIDF" ] || return 0
+	pid="$(cat "$POD_PIDF" 2>/dev/null)"
+	rm -f "$POD_PIDF"
+	case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+	# Never kill by pattern (pkill -f would also match any shell whose command
+	# line happens to contain the pattern — including the one calling us).
+	pod_is_ours "$pid" && kill "$pid" 2>/dev/null
+	return 0
+}
+
+stop_running
+
+# Clean up stale sockets: mpvSockets.lua does not remove them when mpv is
+# terminated by a signal.
+for s in /tmp/mpvSockets/*; do
+	[ -e "$s" ] || continue
+	nr="${s##*/}"
+	case "$nr" in *[!0-9]*) continue ;; esac
+	[ "$(cat "/proc/$nr/comm" 2>/dev/null)" = "mpv" ] || rm -f "$s"
+done
+rm -f "$POD_SOCK"
+
+if [ "$1" = "--stop" ] || [ -z "$1" ]; then
+	pod_refresh
+	exit 0
+fi
+
+# MPRIS module, so media keys / headset buttons control the playback.
+# Packages install it either where mpv loads it automatically (/etc/mpv/scripts)
+# or in a lib directory — only pass it explicitly in the second case, otherwise
+# it would be loaded twice.
+MPRIS=""
+if [ ! -f /etc/mpv/scripts/mpris.so ]; then
+	for p in /usr/lib/mpv-mpris/mpris.so /usr/lib/mpv/mpris.so \
+	         /usr/local/lib/mpv/mpris.so "$HOME/.config/mpv/scripts/mpris.so"; do
+		[ -f "$p" ] && { MPRIS="--script=$p"; break; }
+	done
+fi
+
+# shellcheck disable=SC2086
+setsid -f mpvpod-run $MPRIS $POD_PLAYER_OPTS "--input-ipc-server=$POD_SOCK" \
+	"$POD_MARK" "$@" </dev/null >/dev/null 2>&1
+
+# Remember the pid of the fresh playback.
+i=0
+while [ $i -lt 30 ]; do
+	new="$(pgrep -n -x mpv 2>/dev/null)"
+	if [ -n "$new" ] && pod_is_ours "$new"; then
+		echo "$new" > "$POD_PIDF"
+		break
+	fi
+	i=$((i + 1))
+	sleep 0.1
+done
+
+# Sleep timer (PODCAST_TIMER=0 disables it).
+podtimer "$POD_TIMER_MIN" >/dev/null 2>&1
+
+pod_refresh

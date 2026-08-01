@@ -1,0 +1,30 @@
+#!/bin/sh
+# Started in the background by mpvpod: plays and records the outcome.
+# Kept separate so mpvpod needs no nested quoting.
+#
+# Two mpv options here are not cosmetic:
+#   --no-terminal   and   </dev/null
+# Without them mpv inherits newsboat's standard input, which is already at
+# end-of-file after the article was piped in. mpv reads that as "input closed"
+# and quits within a second — you get the notification but no sound.
+
+. "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
+
+for target in "$@"; do :; done   # last argument is the file/URL
+
+echo "$(date '+%F %T') start: $target" >> "$POD_LOG"
+
+mpv --no-terminal --no-video --log-file="$POD_MPVLOG" "$@" </dev/null >/dev/null 2>&1
+rc=$?
+
+echo "$(date '+%F %T') end   (exit $rc)" >> "$POD_LOG"
+pod_refresh
+
+case "$rc" in
+	0|143) ;;   # finished normally / terminated by us
+	*)
+		reason="$(grep -iE "\[e\]|error|failed|cannot|refused|forbidden" "$POD_MPVLOG" 2>/dev/null |
+			tail -1 | cut -c1-120)"
+		notify-send "$(say "⚠ Playback failed (exit $rc)" "⚠ Wiedergabe fehlgeschlagen (Rückgabe $rc)")" \
+			"${reason:-$POD_MPVLOG}" 2>/dev/null ;;
+esac

@@ -1,0 +1,63 @@
+#!/bin/sh
+# Sleep timer: pauses the playback after N minutes. It pauses rather than
+# stops, so the position is kept — press the headset button to continue.
+#
+#   podtimer          show remaining time
+#   podtimer 30       pause in 30 minutes (resets a running timer)
+#   podtimer off      cancel  (also: aus)
+
+. "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
+
+cancel_timer() {
+	[ -f "$POD_TPID" ] || return 0
+	p="$(cat "$POD_TPID" 2>/dev/null)"
+	rm -f "$POD_TPID" "$POD_TEND"
+	case "$p" in ''|*[!0-9]*) return 0 ;; esac
+	# Make sure the pid still belongs to our timer — pids get reused, and
+	# killing blindly could hit the playback itself.
+	[ "$(cat "/proc/$p/comm" 2>/dev/null)" = "sh" ] || return 0
+	tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | grep -q "mpv-podcast.timer" || return 0
+	kill "$p" 2>/dev/null
+	return 0
+}
+
+case "$1" in
+	off|aus|stop|0)
+		cancel_timer
+		echo "$(say 'Sleep timer off.' 'Einschlaf-Funktion aus.')"
+		exit 0 ;;
+	"")
+		if [ -f "$POD_TEND" ]; then
+			rest=$(( $(cat "$POD_TEND") - $(date +%s) ))
+			if [ "$rest" -gt 0 ]; then
+				echo "$(say 'Pauses in' 'Pausiert in') $(( (rest + 59) / 60 )) $(say minutes Minuten)."
+			else
+				echo "$(say 'Sleep time already reached.' 'Einschlaf-Zeit bereits erreicht.')"
+			fi
+		else
+			echo "$(say 'No sleep timer set.' 'Keine Einschlaf-Zeit gesetzt.')"
+		fi
+		exit 0 ;;
+esac
+
+case "$1" in *[!0-9]*) echo "usage: podtimer [minutes|off]"; exit 1 ;; esac
+min="$1"
+
+cancel_timer
+[ "$min" -eq 0 ] && exit 0
+
+echo $(( $(date +%s) + min * 60 )) > "$POD_TEND"
+
+nohup sh -c "
+	sleep $((min * 60))
+	sock=\"\$(podsock)\" || exit 0
+	printf '%s\n' '{\"command\":[\"set_property\",\"pause\",true]}' | socat - \"\$sock\" >/dev/null 2>&1
+	notify-send '$(say "⏸ Podcast paused" "⏸ Podcast pausiert")' \
+		'$(say "Sleep time reached ($min min)." "Einschlaf-Zeit ($min Minuten) erreicht.")'
+	rm -f '$POD_TPID' '$POD_TEND'
+	pkill '-RTMIN+$POD_SIGNAL' i3blocks 2>/dev/null
+" >/dev/null 2>&1 &
+echo $! > "$POD_TPID"
+echo "$(say 'Pauses automatically in' 'Pausiert automatisch in') $min $(say minutes Minuten)."
+
+pod_refresh

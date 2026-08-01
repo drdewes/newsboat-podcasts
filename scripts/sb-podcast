@@ -1,0 +1,63 @@
+#!/bin/sh
+# Optional i3blocks block: shows the running episode with position, length and
+# the remaining sleep time. Prints nothing when nothing plays, so the block
+# disappears from the bar.
+#
+#   🎧 12:30/58:42 Episode title 💤5m       playing
+#   ⏸ 12:30/58:42 Episode title            paused
+
+. "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
+
+show() {
+	podsock >/dev/null 2>&1 || return 0     # nothing of ours playing -> empty
+
+	# -p mpv on purpose: without it a browser video would be reported here.
+	status="$(playerctl -p mpv status 2>/dev/null)"
+	case "$status" in
+		Playing) sym="🎧" ;;
+		Paused)  sym="⏸" ;;
+		*)       return 0 ;;
+	esac
+
+	pos="$(pod_time "$(playerctl -p mpv position 2>/dev/null)")"
+	len="$(playerctl -p mpv metadata mpris:length 2>/dev/null)"
+	[ -n "$len" ] && total="$(pod_time $((len / 1000000)))"
+
+	title="$(playerctl -p mpv metadata xesam:title 2>/dev/null)"
+	case "$title" in *.mp3|*.m4a|*.ogg|*.opus|*.aac|*.flac) title="" ;; esac
+	[ -n "$title" ] && title=" $(printf '%.28s' "$title")"
+
+	sleep_left=""
+	if [ -f "$POD_TEND" ]; then
+		rest=$(( $(cat "$POD_TEND") - $(date +%s) ))
+		[ "$rest" -gt 0 ] && [ "$rest" -le 600 ] && sleep_left=" 💤$(( (rest + 59) / 60 ))m"
+	fi
+
+	if [ -n "$total" ]; then
+		printf '%s %s/%s%s%s\n' "$sym" "$pos" "$total" "$title" "$sleep_left"
+	else
+		printf '%s %s%s%s\n' "$sym" "$pos" "$title" "$sleep_left"
+	fi
+}
+
+case $BLOCK_BUTTON in
+	1) playerctl -p mpv play-pause >/dev/null 2>&1 ;;
+	2) podplay stop >/dev/null 2>&1 ;;
+	3) notify-send "🎧 $(say 'Podcast block' 'Podcast-Block')" \
+		"$(say '- Running episode with position and length.
+- 💤 = minutes until the sleep timer pauses.
+- Left click: pause / resume.
+- Middle click: stop.
+- Right click: this help.
+- Scroll: seek back and forth.' \
+		   '- Laufende Folge mit Position und Länge.
+- 💤 = Minuten bis zur Einschlaf-Pause.
+- Linksklick: Pause / weiter.
+- Mittelklick: beenden.
+- Rechtsklick: diese Hilfe.
+- Scrollen: vor- und zurückspulen.')" ;;
+	4) podseek "$POD_SEEK" >/dev/null 2>&1 ;;
+	5) podseek "-$POD_SEEK" >/dev/null 2>&1 ;;
+esac
+
+show

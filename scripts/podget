@@ -1,0 +1,37 @@
+#!/bin/sh
+# Download the podcast episode newsboat hands over. Bound to a macro:
+#
+#   macro l pipe-to "podget"
+#
+# The download runs in the background (task spooler, `tsp`), so newsboat stays
+# usable. Files land in one folder per podcast under $PODCAST_DIR (~/Podcasts).
+
+. "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
+
+txt="$(cat)"
+url="$(pod_url_from_article "$txt")"
+[ -z "$url" ] && {
+	notify-send "🎧 Podcast" "$(say 'No audio file found in this article.' 'Keine Audiodatei in diesem Artikel gefunden.')"
+	exit 1
+}
+
+feed="$(pod_field Feed "$txt")"
+title="$(pod_field Title "$txt")"
+[ -z "$title" ] && title="$(pod_field Titel "$txt")"
+
+folder="$POD_DIR/$(printf '%s' "${feed:-Podcast}" | tr '/' '-' | cut -c1-60)"
+ext="$(printf '%s' "$url" | sed 's/[?#].*//' | sed -n 's/.*\.\([a-zA-Z0-9]\{2,4\}\)$/\1/p')"
+[ -z "$ext" ] && ext="mp3"
+name="$(printf '%s' "${title:-episode}" | tr '/' '-' | cut -c1-90).$ext"
+
+mkdir -p "$folder"
+notify-send "$(say '⏳ Downloading episode' '⏳ Podcast wird geladen')" "${title:-$url}" 2>/dev/null
+
+if command -v tsp >/dev/null 2>&1; then
+	id="$(tsp curl -L --silent --show-error -o "$folder/$name" "$url")"
+	tsp -D "$id" notify-send "$(say '👍 Episode ready' '👍 Podcast fertig')" "$name" >/dev/null 2>&1
+else
+	# No task spooler: detach manually so newsboat is not blocked.
+	setsid -f sh -c "curl -L --silent --show-error -o '$folder/$name' '$url' &&
+		notify-send '$(say '👍 Episode ready' '👍 Podcast fertig')' '$name'" </dev/null >/dev/null 2>&1
+fi

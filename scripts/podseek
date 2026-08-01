@@ -1,0 +1,47 @@
+#!/bin/sh
+# Seek within the running playback (podcast, music, video — whatever plays).
+#
+#   podseek           jump forward by $PODCAST_SEEK seconds (default 30)
+#   podseek 30        30 seconds forward
+#   podseek -30       30 seconds back
+#
+# Deliberately silent on success: the position is visible in the status bar
+# block. Only a failure is reported.
+
+. "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
+
+sec="${1:-$POD_SEEK}"
+
+case "$sec" in
+	-*) direction="${sec#-}-" ;;
+	*)  direction="${sec}+" ;;
+esac
+
+# Do not overshoot the end when seeking forward — that would end the episode.
+pos="$(playerctl position 2>/dev/null | cut -d. -f1)"
+len="$(playerctl metadata mpris:length 2>/dev/null)"
+case "$sec" in
+	-*) ;;
+	*)
+		if [ -n "$pos" ] && [ -n "$len" ]; then
+			end=$(( len / 1000000 - 3 ))
+			if [ $((pos + sec)) -ge "$end" ]; then
+				playerctl position "$end" 2>/dev/null
+				pod_refresh
+				exit 0
+			fi
+		fi ;;
+esac
+
+if playerctl position "$direction" 2>/dev/null; then
+	pod_refresh
+	exit 0
+fi
+
+# Fallback: talk to mpv directly (no MPRIS module installed).
+sock="$(podsock)" || {
+	notify-send "⏭ $(say Seek Spulen)" "$(say 'Nothing is playing.' 'Es läuft gerade nichts.')"
+	exit 1
+}
+printf '%s\n' "{\"command\":[\"seek\",$sec,\"relative\"]}" | socat - "$sock" >/dev/null 2>&1
+pod_refresh

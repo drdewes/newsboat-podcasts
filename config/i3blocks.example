@@ -1,0 +1,9 @@
+# Optional status bar block for ~/.config/i3blocks/config
+# Shows the running episode; disappears when nothing plays.
+
+[sb-podcast]
+command=timeout 20 ~/.local/bin/statusbar/$BLOCK_NAME
+interval=5
+signal=27
+color=#83a598
+markup=pango

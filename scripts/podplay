@@ -1,0 +1,62 @@
+#!/bin/sh
+# Play the podcast episode newsboat hands over. Bound to a macro:
+#
+#   macro m pipe-to "podplay"
+#
+# pipe-to is the only way to reach the episode's audio file: macros using
+# open-in-browser and %u give you the article link, not the enclosure.
+#
+#   podplay            reads the article on stdin and plays the episode
+#   podplay pause      pause
+#   podplay resume     continue  (also: weiter)
+#   podplay stop       stop playback and cancel the sleep timer
+
+. "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
+
+case "$1" in
+	stop)
+		mpvpod --stop
+		podtimer off >/dev/null
+		echo "$(say 'Playback stopped.' 'Podcast aus.')"
+		exit 0 ;;
+	pause|resume|weiter|start)
+		sock="$(podsock)" || { echo "$(say 'Nothing is playing.' 'Es läuft gerade kein Podcast.')"; exit 1; }
+		case "$1" in
+			pause) cmd='{"command":["set_property","pause",true]}'
+			       done_msg="$(say 'Paused.' 'Pausiert.')" ;;
+			*)     cmd='{"command":["set_property","pause",false]}'
+			       done_msg="$(say 'Playing.' 'Läuft weiter.')" ;;
+		esac
+		printf '%s\n' "$cmd" | socat - "$sock" >/dev/null && { echo "$done_msg"; pod_refresh; }
+		exit 0 ;;
+esac
+
+txt="$(cat)"
+url="$(pod_url_from_article "$txt")"
+[ -z "$url" ] && {
+	notify-send "🎧 Podcast" "$(say 'No audio file found in this article.' 'Keine Audiodatei in diesem Artikel gefunden.')"
+	exit 1
+}
+
+title="$(pod_field Title "$txt")"
+[ -z "$title" ] && title="$(pod_field Titel "$txt")"
+
+# Which output device is the sound going to? By far the most common reason for
+# "it says it is playing but I hear nothing" is a muted or unexpected sink.
+device="$(pactl get-default-sink 2>/dev/null)"
+case "$device" in
+	*[Uu][Ss][Bb]*|*EarPods*|*[Hh]eadset*|*[Hh]eadphone*) device="$(say Headphones Kopfhörer)" ;;
+	*[Ss]peaker*)                                         device="$(say Speakers Lautsprecher)" ;;
+	*) device="${device:-?}" ;;
+esac
+volume="$(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | sed -n 's/.* \([0-9]\+\)%.*/\1/p' | head -1)"
+muted="$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | sed -n 's/Mute: //p')"
+[ "$muted" = "yes" ] && device="$device – $(say 'CAREFUL: muted!' 'ACHTUNG: stumm geschaltet!')"
+
+printf '%s | %s | %s | %s%%\n' "$(date '+%F %T')" "${title:-?}" "$device" "${volume:-?}" \
+	>> "$POD_CACHE/podplay.log"
+
+notify-send "$(say '▶ Podcast playing' '▶ Podcast läuft')" \
+	"${title:-$url}\n$(say Output Ausgabe): $device (${volume:-?} %)" 2>/dev/null
+
+mpvpod "$url"

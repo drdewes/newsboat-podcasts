@@ -1,0 +1,10 @@
+# Optional key bindings for ~/.config/i3/config
+
+# Seek within the running playback
+bindsym $mod+Mod1+Right  exec --no-startup-id podseek 30
+bindsym $mod+Mod1+Left   exec --no-startup-id podseek -30
+
+# Media keys / headset button: control the running player first, fall back to
+# mpd. Requires playerctl and mpv-mpris.
+bindsym XF86AudioPlay    exec --no-startup-id playerctl play-pause || mpc toggle
+bindsym XF86AudioStop    exec --no-startup-id playerctl stop || mpc toggle

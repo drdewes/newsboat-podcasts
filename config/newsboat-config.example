@@ -1,0 +1,8 @@
+# --- newsboat-podcasts -----------------------------------------------------
+# Paste into ~/.config/newsboat/config
+
+macro m pipe-to "podplay"   -- "play this episode"
+macro l pipe-to "podget"    -- "download this episode"
+
+# Do NOT set text-width: it would wrap the article text and break the
+# enclosure URL that podplay reads out of it.
