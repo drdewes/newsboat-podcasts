@@ -4,6 +4,11 @@
 feeds: select an episode, press one key, it plays. No second program, no queue,
 no download step you did not ask for.*
 
+![The status bar block while an episode plays, and the same bar when nothing plays](docs/statusbar.png)
+
+*Top: an episode is playing — position, length, title, and 💤9m until the sleep
+timer pauses it. Bottom: the same bar with nothing playing. The block is gone.*
+
 > **🇩🇪 Deutsche Fassung:** [ganz unten](#deutsch). 👇
 
 ---
@@ -285,9 +290,10 @@ PODCAST_SEEK=30                # Spulschritt in Sekunden
 Beides freiwillig, fertige Schnipsel liegen in [`config/`](config/). Der Block
 erscheint nur, solange etwas läuft:
 
-```
-🎧 12:30/58:42 Friday Night Meditation 💤5m
-```
+![Der Statusleisten-Block während der Wiedergabe und dieselbe Leiste ohne](docs/statusbar.png)
+
+*Oben läuft eine Folge — Position, Länge, Titel und 💤9m bis zur
+Einschlaf-Pause. Unten dieselbe Leiste, ohne Wiedergabe: Der Block ist weg.*
 
 Linksklick pausiert, Mittelklick beendet, Scrollen spult, Rechtsklick erklärt
 sich selbst.
