@@ -13,14 +13,14 @@
 #                      (also: vergessen);  podplay forget --all  drops all of them
 #   podplay pause      pause
 #   podplay resume     continue  (also: weiter)
-#   podplay stop       stop playback and cancel the sleep timer
+#   podplay stop       stop playback and cancel the sleep timer  (also: aus)
 
 . "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
 
 from_start=0
 
 case "$1" in
-	stop)
+	stop|aus)
 		mpvpod --stop
 		podtimer off >/dev/null
 		echo "$(say 'Stopped, the position is remembered.' 'Podcast aus, die Stelle ist gemerkt.')"

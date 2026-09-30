@@ -104,7 +104,7 @@ podplay forget     drop the remembered position of the piped episode
 podplay forget --all   drop all of them
 podplay pause      pause
 podplay resume     continue
-podplay stop       stop and cancel the sleep timer
+podplay stop       stop and cancel the sleep timer  (also: aus)
 
 podseek 30         30 seconds forward
 podseek -30        30 seconds back
