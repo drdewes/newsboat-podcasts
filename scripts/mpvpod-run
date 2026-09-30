@@ -7,6 +7,11 @@
 # Without them mpv inherits newsboat's standard input, which is already at
 # end-of-file after the article was piped in. mpv reads that as "input closed"
 # and quits within a second — you get the notification but no sound.
+#
+# This wrapper also guards the remembered position. mpv writes it when it quits
+# properly, and a shutdown, a logout or a crash is not a proper quit. So we
+# write the position every minute while playing, and on the way out we ask mpv
+# to quit instead of letting it be killed.
 
 . "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
 
@@ -14,8 +19,31 @@ for target in "$@"; do :; done   # last argument is the file/URL
 
 echo "$(date '+%F %T') start: $target" >> "$POD_LOG"
 
-mpv --no-terminal --no-video --log-file="$POD_MPVLOG" "$@" </dev/null >/dev/null 2>&1
+mpv --no-terminal --no-video --log-file="$POD_MPVLOG" "$@" </dev/null >/dev/null 2>&1 &
+mpv_pid=$!
+
+# Someone terminates us (logout, shutdown, systemd): pass it on as a quit.
+trap 'sock="$(pod_sock_for "$mpv_pid")" && pod_ipc "$sock" "{\"command\":[\"quit\"]}"' TERM INT HUP
+
+# Periodic safety net, disabled with PODCAST_SAVE_EVERY=0.
+saver=""
+if [ "$POD_RESUME" = 1 ] && [ "${POD_SAVE_EVERY:-0}" -gt 0 ] 2>/dev/null; then
+	(
+		while kill -0 "$mpv_pid" 2>/dev/null; do
+			sleep "$POD_SAVE_EVERY"
+			kill -0 "$mpv_pid" 2>/dev/null || break
+			sock="$(pod_sock_for "$mpv_pid")" || continue
+			pod_ipc "$sock" '{"command":["write-watch-later-config"]}'
+		done
+	) &
+	saver=$!
+fi
+
+# A caught signal makes wait return early; ask again for the real exit status.
+wait "$mpv_pid"
 rc=$?
+[ "$rc" -gt 128 ] && { wait "$mpv_pid" 2>/dev/null; rc=$?; }
+[ -n "$saver" ] && kill "$saver" 2>/dev/null
 
 echo "$(date '+%F %T') end   (exit $rc)" >> "$POD_LOG"
 pod_refresh

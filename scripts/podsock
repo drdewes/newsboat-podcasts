@@ -12,16 +12,12 @@
 
 . "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
 
-answers() {
-	[ -S "$1" ] || return 1
-	printf '%s\n' '{"command":["get_property","pause"]}' |
-		timeout 1 socat - "$1" >/dev/null 2>&1
-}
+# The asking itself lives in the shared library (pod_answers, pod_sock_for),
+# because mpvpod and mpvpod-run need it too.
 
 pid="$(cat "$POD_PIDF" 2>/dev/null)"
 case "$pid" in ''|*[!0-9]*) exit 1 ;; esac
 pod_is_ours "$pid" || exit 1
 
-answers "$POD_SOCK"            && { echo "$POD_SOCK"; exit 0; }
-answers "/tmp/mpvSockets/$pid" && { echo "/tmp/mpvSockets/$pid"; exit 0; }
-exit 1
+sock="$(pod_sock_for "$pid")" || exit 1
+echo "$sock"

@@ -3,6 +3,7 @@
 # Used by podplay and, if you like, as gPodder's media player.
 #
 #   mpvpod <file-or-url>
+#   mpvpod --from-start <file-or-url>   ignore a remembered position
 #   mpvpod --stop
 #
 # Einzel-Abspieler: Es läuft immer nur EINE Wiedergabe, ein neuer Aufruf löst
@@ -13,11 +14,24 @@
 stop_running() {
 	[ -f "$POD_PIDF" ] || return 0
 	pid="$(cat "$POD_PIDF" 2>/dev/null)"
-	rm -f "$POD_PIDF"
-	case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+	case "$pid" in ''|*[!0-9]*) rm -f "$POD_PIDF"; return 0 ;; esac
 	# Never kill by pattern (pkill -f would also match any shell whose command
 	# line happens to contain the pattern — including the one calling us).
-	pod_is_ours "$pid" && kill "$pid" 2>/dev/null
+	if pod_is_ours "$pid"; then
+		# Ask mpv to quit rather than killing it: a signal does NOT write the
+		# resume position, a quit over the IPC socket does (measured, mpv 0.41).
+		# kill stays as the last resort for an mpv that no longer answers.
+		if sock="$(pod_sock_for "$pid")"; then
+			pod_ipc "$sock" '{"command":["quit"]}'
+			i=0
+			while [ $i -lt 30 ] && kill -0 "$pid" 2>/dev/null; do
+				i=$((i + 1))
+				sleep 0.1
+			done
+		fi
+		kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null
+	fi
+	rm -f "$POD_PIDF"
 	return 0
 }
 
@@ -38,6 +52,12 @@ if [ "$1" = "--stop" ] || [ -z "$1" ]; then
 	exit 0
 fi
 
+# Start this episode from the beginning although a position is remembered.
+from_start=0
+case "$1" in
+	--from-start|--von-vorn) from_start=1; shift ;;
+esac
+
 # MPRIS module, so media keys / headset buttons control the playback.
 # Packages install it either where mpv loads it automatically (/etc/mpv/scripts)
 # or in a lib directory — only pass it explicitly in the second case, otherwise
@@ -48,6 +68,15 @@ if [ ! -f /etc/mpv/scripts/mpris.so ]; then
 	         /usr/local/lib/mpv/mpris.so "$HOME/.config/mpv/scripts/mpris.so"; do
 		[ -f "$p" ] && { MPRIS="--script=$p"; break; }
 	done
+fi
+
+# Remember where we were. Prepending with set -- keeps every path quoted,
+# which matters for a watch-later directory with a space in it.
+if [ "$POD_RESUME" = 1 ]; then
+	mkdir -p "$POD_WATCH" 2>/dev/null
+	set -- "--save-position-on-quit" "--watch-later-dir=$POD_WATCH" \
+		"--write-filename-in-watch-later-config" "$@"
+	[ "$from_start" = 1 ] && set -- "--no-resume-playback" "$@"
 fi
 
 # shellcheck disable=SC2086

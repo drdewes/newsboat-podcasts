@@ -1,6 +1,8 @@
 #!/bin/sh
 # Sleep timer: pauses the playback after N minutes. It pauses rather than
 # stops, so the position is kept — press the headset button to continue.
+# When it fires it also writes the position to disk, so falling asleep and
+# shutting the machine down later does not lose the place.
 #
 #   podtimer          show remaining time
 #   podtimer 30       pause in 30 minutes (resets a running timer)
@@ -52,6 +54,10 @@ nohup sh -c "
 	sleep $((min * 60))
 	sock=\"\$(podsock)\" || exit 0
 	printf '%s\n' '{\"command\":[\"set_property\",\"pause\",true]}' | socat - \"\$sock\" >/dev/null 2>&1
+	# Write the position down as well. Pausing alone keeps it only in memory,
+	# and the whole point of the sleep timer is that the machine may be off
+	# before anyone touches it again.
+	printf '%s\n' '{\"command\":[\"write-watch-later-config\"]}' | socat - \"\$sock\" >/dev/null 2>&1
 	notify-send '$(say "⏸ Podcast paused" "⏸ Podcast pausiert")' \
 		'$(say "Sleep time reached ($min min)." "Einschlaf-Zeit ($min Minuten) erreicht.")'
 	rm -f '$POD_TPID' '$POD_TEND'

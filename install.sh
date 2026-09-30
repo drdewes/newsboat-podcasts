@@ -79,6 +79,8 @@ Optional settings in ~/.config/newsboat-podcasts.conf:
     PODCAST_DIR="\$HOME/Podcasts"   # download folder
     PODCAST_TIMER=30                # sleep timer in minutes, 0 = off
     PODCAST_SEEK=30                 # seek step in seconds
+    PODCAST_RESUME=1                # remember the position, 0 = off
+    PODCAST_SAVE_EVERY=60           # write it down every N seconds
 
 The i3blocks block and key bindings are described in the README.
 EOF

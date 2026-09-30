@@ -17,25 +17,41 @@ case "$sec" in
 	*)  direction="${sec}+" ;;
 esac
 
-# Do not overshoot the end when seeking forward — that would end the episode.
-pos="$(playerctl position 2>/dev/null | cut -d. -f1)"
-len="$(playerctl metadata mpris:length 2>/dev/null)"
-case "$sec" in
-	-*) ;;
-	*)
-		if [ -n "$pos" ] && [ -n "$len" ]; then
-			end=$(( len / 1000000 - 3 ))
-			if [ $((pos + sec)) -ge "$end" ]; then
-				playerctl position "$end" 2>/dev/null
-				pod_refresh
-				exit 0
-			fi
-		fi ;;
-esac
+# Which player is meant? Without -p, playerctl grabs the first one it finds —
+# often a paused browser tab, leaving the podcast where it was. So: prefer mpv
+# (the podcast), then anything that is actually playing.
+pick_player() {
+	list="$(playerctl -l 2>/dev/null)" || return 1
+	for p in $list; do
+		case "$p" in mpv*) echo "$p"; return 0 ;; esac
+	done
+	for p in $list; do
+		[ "$(playerctl -p "$p" status 2>/dev/null)" = "Playing" ] && { echo "$p"; return 0; }
+	done
+	return 1
+}
 
-if playerctl position "$direction" 2>/dev/null; then
-	pod_refresh
-	exit 0
+if player="$(pick_player)"; then
+	# Do not overshoot the end when seeking forward — that would end the episode.
+	pos="$(playerctl -p "$player" position 2>/dev/null | cut -d. -f1)"
+	len="$(playerctl -p "$player" metadata mpris:length 2>/dev/null)"
+	case "$sec" in
+		-*) ;;
+		*)
+			if [ -n "$pos" ] && [ -n "$len" ]; then
+				end=$(( len / 1000000 - 3 ))
+				if [ $((pos + sec)) -ge "$end" ]; then
+					playerctl -p "$player" position "$end" 2>/dev/null
+					pod_refresh
+					exit 0
+				fi
+			fi ;;
+	esac
+
+	if playerctl -p "$player" position "$direction" 2>/dev/null; then
+		pod_refresh
+		exit 0
+	fi
 fi
 
 # Fallback: talk to mpv directly (no MPRIS module installed).

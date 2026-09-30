@@ -43,6 +43,10 @@ Plus, around that:
 
 - **Only one playback at a time.** Starting another episode replaces the
   running one instead of adding to the noise.
+- **It remembers where you stopped.** Start the same episode again and it
+  continues where you left off, and says so. That survives stopping, starting
+  the next episode, a logout, even a crash — the position is written to disk
+  while playing, not only on the way out.
 - **Sleep timer.** Pauses after 30 minutes (configurable) rather than stopping,
   so the position is kept.
 - **Headset button / media keys** pause and resume, via MPRIS.
@@ -93,7 +97,11 @@ episode, press `,` then `m`.
 ## Commands
 
 ```
-podplay            play the article on stdin (this is what the macro calls)
+podplay            play the article on stdin (this is what the macro calls),
+                   continuing where you stopped
+podplay neu        play it from the beginning anyway
+podplay forget     drop the remembered position of the piped episode
+podplay forget --all   drop all of them
 podplay pause      pause
 podplay resume     continue
 podplay stop       stop and cancel the sleep timer
@@ -116,7 +124,14 @@ PODCAST_TIMER=30               # sleep timer in minutes, 0 = off
 PODCAST_SEEK=30                # seek step in seconds
 PODCAST_LANG=en                # force message language
 PODCAST_MPV_OPTS=""            # extra mpv options
+PODCAST_RESUME=1               # remember the position, 0 = off
+PODCAST_SAVE_EVERY=60          # write it down every N seconds, 0 = only on exit
+PODCAST_WATCH_DIR="$HOME/.cache/newsboat-podcasts/watch_later"
 ```
+
+The positions live in their own directory on purpose, so podcast episodes do
+not turn up in the resume list of your normal mpv. An episode heard to the end
+removes its own entry — "no entry" means finished, not never played.
 
 ## Status bar and key bindings
 
@@ -143,7 +158,7 @@ gpo set player.audio mpvpod
 
 ---
 
-## Three pitfalls, documented
+## Four pitfalls, documented
 
 If you build something like this yourself, these will cost you an evening
 each. They are commented in the source where they matter.
@@ -173,7 +188,17 @@ enclosure. Only `pipe-to` hands over the rendered article, which contains the
 download URL — so the URL has to be parsed out of text. That is why this
 project is shaped the way it is.
 
-And a fourth, specific to some setups: if `mpvSockets.lua` is loaded (it ships
+**4. `--save-position-on-quit` alone remembers nothing.**
+The obvious way to add resume support is that one option. It does not work,
+because the player here is stopped with a signal, and **a signal does not write
+the resume file** (measured with mpv 0.41: killed, exit code 143, the
+`--watch-later-dir` stays empty). Only a real quit writes it. So the stop path
+had to be rebuilt: ask mpv to quit over the IPC socket, wait for it, and keep
+`kill` as the last resort for a player that no longer answers. The same reason
+is why the position is additionally written every 60 seconds with
+`write-watch-later-config` — a shutdown or a crash is never a polite quit.
+
+And a fifth, specific to some setups: if `mpvSockets.lua` is loaded (it ships
 with LARBS), it **overrides** `--input-ipc-server` and puts the control socket
 at `/tmp/mpvSockets/<pid>` instead. `podsock` checks both locations.
 
@@ -201,7 +226,7 @@ wollte meine Podcasts auch dort haben — der eingebaute Weg war mir zu
 umständlich. Den Code hat mir **[Claude Code](https://claude.com/claude-code)**
 gebaut; ich habe gesagt, was ich will, und geprüft, ob es funktioniert. Ich
 veröffentliche es, weil sich vermutlich andere über dasselbe ärgern — und weil
-drei der Stolpersteine uns einen ganzen Nachmittag gekostet haben und nirgends
+vier der Stolpersteine uns einen ganzen Nachmittag gekostet haben und nirgends
 dokumentiert sind. 🙂
 
 ## Das Problem
@@ -223,6 +248,11 @@ Drumherum:
 
 - **Nur eine Wiedergabe gleichzeitig.** Eine neue Folge löst die laufende ab,
   statt sich dazuzulegen.
+- **Es merkt sich, wo du aufgehört hast.** Startest du dieselbe Folge wieder,
+  geht es an dieser Stelle weiter, und die Meldung sagt es dir auch. Das
+  übersteht das Beenden, die nächste Folge, das Abmelden und sogar einen
+  Absturz — die Stelle wird während des Hörens mitgeschrieben, nicht erst beim
+  Verlassen.
 - **Einschlaf-Funktion.** Pausiert nach 30 Minuten (einstellbar), statt zu
   stoppen — die Stelle bleibt also erhalten.
 - **Kopfhörerknopf und Medientasten** pausieren und starten wieder (über MPRIS).
@@ -270,6 +300,10 @@ Feed in `~/.config/newsboat/urls` eintragen, mit `R` laden, Folge auswählen,
 ## Befehle
 
 ```
+podplay                  spielt die Folge, an der gemerkten Stelle weiter
+podplay neu              spielt sie trotzdem von vorn
+podplay vergessen        vergisst die Stelle dieser Folge
+podplay vergessen alle   vergisst alle gemerkten Stellen
 podplay pause | resume | stop
 podseek 30 | -30
 podtimer | 45 | off
@@ -283,6 +317,9 @@ Freiwillig, in `~/.config/newsboat-podcasts.conf`:
 PODCAST_DIR="$HOME/Podcasts"   # Ordner für Downloads
 PODCAST_TIMER=30               # Einschlaf-Minuten, 0 = aus
 PODCAST_SEEK=30                # Spulschritt in Sekunden
+PODCAST_RESUME=1               # Stelle merken, 0 = aus
+PODCAST_SAVE_EVERY=60          # sie alle N Sekunden mitschreiben, 0 = nur am Ende
+PODCAST_WATCH_DIR="$HOME/.cache/newsboat-podcasts/watch_later"
 ```
 
 ## Statusleiste und Tasten
@@ -307,7 +344,7 @@ dann gilt „nur eine Wiedergabe" für beide:
 gpo set player.audio mpvpod
 ```
 
-## Drei Stolpersteine
+## Vier Stolpersteine
 
 **1. newsboat hängt den Dateityp an die Adresse — aber nicht immer.** Im
 Artikel steht `Podcast-Download-URL: https://…/folge.mp3 (Typ: audio/mpeg)`,
@@ -326,7 +363,18 @@ Programm heraus tritt es nie auf — was die Suche mühsam macht.
 gerenderten Artikel weiter, in dem die Adresse steht — sie muss also aus Text
 herausgelesen werden. Daher die Bauform dieses Projekts.
 
-Und ein vierter, nur in manchen Installationen: Ist `mpvSockets.lua` geladen
+**4. `--save-position-on-quit` allein merkt sich gar nichts.** Der naheliegende
+Weg zum Weiterhören ist diese eine Option. Sie wirkt hier nicht, weil die
+Wiedergabe mit einem Signal beendet wurde — und **ein Signal schreibt die Stelle
+nicht mit** (mit mpv 0.41 nachgemessen: mit `kill` beendet, Rückgabe 143, das
+`--watch-later-dir` bleibt leer). Nur ein richtiges Beenden schreibt sie. Der
+Stopp-Weg musste also umgebaut werden: mpv über den Steuer-Anschluss bitten
+aufzuhören, kurz warten, und `kill` nur noch als letzte Möglichkeit für einen
+Abspieler, der nicht mehr antwortet. Aus demselben Grund wird die Stelle
+zusätzlich jede Minute mit `write-watch-later-config` festgehalten — ein
+Herunterfahren oder ein Absturz ist nie ein höfliches Beenden.
+
+Und ein fünfter, nur in manchen Installationen: Ist `mpvSockets.lua` geladen
 (bei LARBS dabei), **überschreibt** es `--input-ipc-server` und legt den
 Steuer-Anschluss unter `/tmp/mpvSockets/<Nummer>` ab. `podsock` sieht an beiden
 Stellen nach.

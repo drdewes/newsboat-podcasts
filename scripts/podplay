@@ -6,18 +6,52 @@
 # pipe-to is the only way to reach the episode's audio file: macros using
 # open-in-browser and %u give you the article link, not the enclosure.
 #
-#   podplay            reads the article on stdin and plays the episode
+#   podplay            reads the article on stdin and plays the episode,
+#                      continuing where it was left off
+#   podplay neu        play it from the beginning anyway  (also: restart)
+#   podplay forget     drop the remembered position of the piped episode
+#                      (also: vergessen);  podplay forget --all  drops all of them
 #   podplay pause      pause
 #   podplay resume     continue  (also: weiter)
 #   podplay stop       stop playback and cancel the sleep timer
 
 . "${PODCAST_LIB:-/usr/local/lib/newsboat-podcasts}/podcast-common.sh"
 
+from_start=0
+
 case "$1" in
 	stop)
 		mpvpod --stop
 		podtimer off >/dev/null
-		echo "$(say 'Playback stopped.' 'Podcast aus.')"
+		echo "$(say 'Stopped, the position is remembered.' 'Podcast aus, die Stelle ist gemerkt.')"
+		exit 0 ;;
+	neu|restart|vorn|--from-start)
+		from_start=1 ;;
+	forget|vergessen)
+		# With an article piped in: that episode. With --all: every one.
+		# Never both by accident — a key binding that hands us nothing must
+		# not wipe the lot.
+		case "$2" in
+			--all|alle)
+				n="$(pod_forget --all)"
+				if [ "$n" = 1 ]; then
+					echo "$(say 'Forgot 1 saved position.' 'Eine gemerkte Stelle vergessen.')"
+				else
+					echo "$(say "Forgot $n saved positions." "$n gemerkte Stellen vergessen.")"
+				fi
+				exit 0 ;;
+		esac
+		url=""
+		[ -t 0 ] || url="$(pod_url_from_article "$(cat)")"
+		if [ -z "$url" ]; then
+			echo "$(say 'Pipe an episode in, or use: podplay forget --all' 'Folge übergeben, oder: podplay vergessen alle')"
+			exit 1
+		fi
+		if [ "$(pod_forget "$url")" = 1 ]; then
+			echo "$(say 'Position forgotten, this episode starts over.' 'Stelle vergessen, die Folge fängt wieder von vorn an.')"
+		else
+			echo "$(say 'No position saved for this episode.' 'Für diese Folge ist keine Stelle gemerkt.')"
+		fi
 		exit 0 ;;
 	pause|resume|weiter|start)
 		sock="$(podsock)" || { echo "$(say 'Nothing is playing.' 'Es läuft gerade kein Podcast.')"; exit 1; }
@@ -41,6 +75,13 @@ url="$(pod_url_from_article "$txt")"
 title="$(pod_field Title "$txt")"
 [ -z "$title" ] && title="$(pod_field Titel "$txt")"
 
+# Heard part of this one before? Then say so, rather than letting mpv jump
+# into the middle without a word.
+resume=""
+if [ "$from_start" = 0 ] && pos="$(pod_saved_pos "$url")"; then
+	resume="$(say 'continues at' 'weiter bei') $(pod_time "$pos")"
+fi
+
 # Which output device is the sound going to? By far the most common reason for
 # "it says it is playing but I hear nothing" is a muted or unexpected sink.
 device="$(pactl get-default-sink 2>/dev/null)"
@@ -53,10 +94,14 @@ volume="$(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | sed -n 's/.* \([0-9
 muted="$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | sed -n 's/Mute: //p')"
 [ "$muted" = "yes" ] && device="$device – $(say 'CAREFUL: muted!' 'ACHTUNG: stumm geschaltet!')"
 
-printf '%s | %s | %s | %s%%\n' "$(date '+%F %T')" "${title:-?}" "$device" "${volume:-?}" \
-	>> "$POD_CACHE/podplay.log"
+printf '%s | %s | %s | %s%%%s\n' "$(date '+%F %T')" "${title:-?}" "$device" "${volume:-?}" \
+	"${resume:+ | $resume}" >> "$POD_CACHE/podplay.log"
 
 notify-send "$(say '▶ Podcast playing' '▶ Podcast läuft')" \
-	"${title:-$url}\n$(say Output Ausgabe): $device (${volume:-?} %)" 2>/dev/null
+	"${title:-$url}\n$(say Output Ausgabe): $device (${volume:-?} %)${resume:+ · $resume}" 2>/dev/null
 
-mpvpod "$url"
+if [ "$from_start" = 1 ]; then
+	mpvpod --from-start "$url"
+else
+	mpvpod "$url"
+fi
