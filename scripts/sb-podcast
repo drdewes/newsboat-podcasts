@@ -25,7 +25,13 @@ show() {
 
 	title="$(playerctl -p mpv metadata xesam:title 2>/dev/null)"
 	case "$title" in *.mp3|*.m4a|*.ogg|*.opus|*.aac|*.flac) title="" ;; esac
-	[ -n "$title" ] && title=" $(printf '%.28s' "$title")"
+	# Shorten by characters, not bytes: printf '%.28s' can split an umlaut,
+	# and invalid UTF-8 makes i3bar drop the whole block.
+	title="$(printf '%s' "$title" | sed -E 's/^(.{28}).*/\1/')"
+	# With markup=pango a bare & or < is invalid markup and the block vanishes
+	# ("Bayern & BVB"). i3blocks exports the block's markup setting.
+	[ "$markup" = pango ] && title="$(printf '%s' "$title" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')"
+	[ -n "$title" ] && title=" $title"
 
 	sleep_left=""
 	if [ -f "$POD_TEND" ]; then
